@@ -7,7 +7,7 @@
     <Framework Minimum="6.0.0">6.0.x</Framework>
     <ModuleRequired>Redis</ModuleRequired>
     <License>GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007</License>
-    <ChangeLog Version="6.0.30" Date="2023-05-11 16:16:00">Backports from OTOBO.</ChangeLog>
+    <ChangeLog Version="6.0.30" Date="2023-05-11 16:16:00">Update package version to 6.0.30</ChangeLog>
     <Description Lang="en">Cache implementation on Redis.</Description>
     <Description Lang="ru">Реализация кэша на Redis.</Description>
     <Filelist>
