@@ -1,9 +1,15 @@
 # --
 # Copyright (C) 2019 by Yuri Myasoedov <ymyasoedov@yandex.ru>
+# Copyright (C) 2019-2023 Rother OSS GmbH, https://otobo.de/
 # --
-# This software comes with ABSOLUTELY NO WARRANTY. For details, see
-# the enclosed file COPYING for license information (GPL). If you
-# did not receive this file, see https://www.gnu.org/licenses/gpl-3.0.txt.
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later version.
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 # --
 
 package Kernel::System::Cache::Redis;
@@ -29,7 +35,7 @@ sub new {
     bless( $Self, $Type );
 
     # Store Redis config
-    my $ConfigObject   = $Kernel::OM->Get('Kernel::Config');
+    my $ConfigObject = $Kernel::OM->Get('Kernel::Config');
     $Self->{Config} = {
         Address        => $ConfigObject->Get('Cache::Redis')->{Server}         || '127.0.0.1:6379',
         DatabaseNumber => $ConfigObject->Get('Cache::Redis')->{DatabaseNumber} || 0,
@@ -67,7 +73,7 @@ sub Set {
         # Wrap the data, because we don't know, what user expects
         # to get from cache: reference to SCALAR or common SCALAR
         my $StorableObject = $Kernel::OM->Get('Kernel::System::Storable');
-        my $Data = $StorableObject->Serialize(
+        my $Data           = $StorableObject->Serialize(
             Data => {
                 _Data => $Param{Value},
             },
@@ -77,10 +83,13 @@ sub Set {
 
     };
     if ($@) {
+        my $Message = $@;    # as $Kernel::OM->Get('Kernel::System::Log') might clear $@
+
         $Kernel::OM->Get('Kernel::System::Log')->Log(
             Priority => 'error',
-            Message  => $@,
+            Message  => $Message,
         );
+
         return;
     }
 
@@ -118,7 +127,7 @@ sub Get {
     return if !$Value;
 
     my $StorableObject = $Kernel::OM->Get('Kernel::System::Storable');
-    my $Data = $StorableObject->Deserialize(
+    my $Data           = $StorableObject->Deserialize(
         Data => $Value,
     );
 
@@ -167,28 +176,35 @@ sub CleanUp {
     # Connect to Redis if not connected
     return if !$Self->{Redis} && !$Self->_Connect();
 
+    # Delete all types when $Param{KeepTypes} is not set or references an empty array.
+    # Otherwise remove the kept types from the list of to be deleted types.
+    my %TypeIsKept;
+    if ( $Param{KeepTypes} && ref $Param{KeepTypes} eq 'ARRAY' ) {
+        %TypeIsKept = map { $_ => 1 } ( $Param{KeepTypes}->@* );
+    }
     eval {
-        if ( !$Param{Type} && !$Param{KeepTypes} ) {
+        if ( !$Param{Type} && !%TypeIsKept ) {
             $Self->{Redis}->flushdb();
+
             return 1;
         }
 
-        my @TypeList;
+        my @ToBeDeletedTypes;
         if ( $Param{Type} ) {
-            push @TypeList, $Param{Type};
+            push @ToBeDeletedTypes, $Param{Type};
         }
         else {
-            @TypeList = $Self->{Redis}->smembers($NamespaceKey);
+            @ToBeDeletedTypes = $Self->{Redis}->smembers($NamespaceKey);
         }
 
-        if ( $Param{KeepTypes} ) {
-            my $KeepTypesRegex = join( '|', map {"\Q$_\E"} @{ $Param{KeepTypes} } );
-            @TypeList = grep { $_ !~ m{/$KeepTypesRegex/?$}smx } @TypeList;
+        # filter the types that should be kept
+        if (%TypeIsKept) {
+            @ToBeDeletedTypes = grep { !$TypeIsKept{$_} } @ToBeDeletedTypes;
         }
 
-        return 1 if !@TypeList;
+        return 1 if !@ToBeDeletedTypes;
 
-        for my $Type (@TypeList) {
+        for my $Type (@ToBeDeletedTypes) {
             my ( $Cursor, $KeysRef ) = ( 0, [] );
             do {
                 ( $Cursor, $KeysRef ) = $Self->{Redis}->scan( $Cursor, MATCH => "$Type:*" );
@@ -213,7 +229,7 @@ sub _Connect {
     return if $Self->{Redis};
 
     my $MainObject = $Kernel::OM->Get('Kernel::System::Main');
-    my $Loaded = $MainObject->Require(
+    my $Loaded     = $MainObject->Require(
         $Self->{Config}{RedisFast} ? 'Redis::Fast' : 'Redis',
     );
     return if !$Loaded;
@@ -227,7 +243,8 @@ sub _Connect {
         }
         if (
             $Self->{Config}{DatabaseNumber}
-            && !$Self->{Redis}->select( $Self->{Config}{DatabaseNumber} ) )
+            && !$Self->{Redis}->select( $Self->{Config}{DatabaseNumber} )
+            )
         {
             die "Can't select database '$Self->{Config}{DatabaseNumber}'!";
         }
@@ -245,13 +262,3 @@ sub _Connect {
 }
 
 1;
-
-=head1 TERMS AND CONDITIONS
-
-This software is part of the OTRS project (L<https://otrs.org/>).
-
-This software comes with ABSOLUTELY NO WARRANTY. For details, see
-the enclosed file COPYING for license information (GPL). If you
-did not receive this file, see L<https://www.gnu.org/licenses/gpl-3.0.txt>.
-
-=cut
